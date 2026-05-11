@@ -1,0 +1,12 @@
+/* Edge TTS Reader styles */
+
+/* 朗读中的高亮：把当前句的编辑器选区染成醒目的黄色 */
+body.edge-tts-reading .cm-editor .cm-selectionBackground,
+body.edge-tts-reading .cm-editor.cm-focused .cm-selectionBackground,
+body.edge-tts-reading .cm-editor ::selection {
+  background-color: rgba(255, 213, 79, 0.55) !important;
+}
+
+body.edge-tts-reading .cm-editor .cm-selectionLayer {
+  z-index: 1;
+}

@@ -1,0 +1,11 @@
+{
+  "id": "edge-tts-reader",
+  "name": "Edge TTS Reader",
+  "version": "1.0.0",
+  "description": "朗读当前笔记，使用 Microsoft Edge TTS 高质量中文语音",
+  "main": "main.js",
+  "styles": "styles.css",
+  "author": "Local",
+  "requirements": [],
+  "isDesktopOnly": true
+}

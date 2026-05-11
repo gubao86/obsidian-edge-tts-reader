@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+
+# logs
+*.log
+
+# obsidian
+data.json
+
+# release artifacts
+release/
+dist/
+*.zip

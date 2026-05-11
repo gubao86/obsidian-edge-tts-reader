@@ -1,0 +1,22 @@
+{
+  "name": "edge-tts-reader",
+  "version": "1.0.0",
+  "description": "Obsidian 插件：本地 Microsoft Edge TTS 高质量中文语音朗读当前笔记，支持句子预取、高亮、多音色与变速。",
+  "main": "main.js",
+  "scripts": {
+    "build": "node build.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": ["obsidian", "obsidian-plugin", "tts", "edge-tts", "text-to-speech"],
+  "author": "aluo",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "obsidian": "^1.12.3"
+  }
+}
