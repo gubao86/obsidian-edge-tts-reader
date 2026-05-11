@@ -1,0 +1,50 @@
+name: Release Obsidian Plugin
+
+on:
+  push:
+    tags:
+      # 匹配语义版本，例如 1.1.0、2.0.1（与 manifest.json 中 version 字段一致，无 v 前缀）
+      - "[0-9]+.[0-9]+.[0-9]+"
+      - "[0-9]+.[0-9]+.[0-9]+-*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Verify tag matches manifest version
+        run: |
+          TAG="${GITHUB_REF##*/}"
+          VER=$(node -p "require('./manifest.json').version")
+          echo "tag=$TAG  manifest.version=$VER"
+          if [ "$TAG" != "$VER" ]; then
+            echo "::error::Tag ($TAG) does not match manifest.json version ($VER)"
+            exit 1
+          fi
+
+      - name: Build
+        run: npm run build
+
+      - name: Create Release & upload assets
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "${{ github.ref_name }}"
+          generate_release_notes: true
+          files: |
+            manifest.json
+            main.js
+            styles.css
