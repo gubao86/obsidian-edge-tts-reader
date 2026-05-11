@@ -8,18 +8,17 @@ import {
   MarkdownView,
   Editor,
 } from "obsidian";
+import { MsEdgeTTS, OUTPUT_FORMAT, ProsodyOptions } from "msedge-tts";
 import { EdgeTTSReaderSettings, DEFAULT_SETTINGS } from "./settings";
+import { VOICES } from "./voices";
 
-const TTS_SERVER = "http://localhost:18080";
 const PREFETCH_AHEAD = 5;
 const BODY_READING_CLASS = "edge-tts-reading";
 
-type VoiceInfo = { name: string; gender: string; lang: string };
 type Segment = { start: number; end: number; text: string };
 
 export default class EdgeTTSReaderPlugin extends Plugin {
   settings: EdgeTTSReaderSettings;
-  voices: Record<string, VoiceInfo> = {};
   private audio: HTMLAudioElement | null = null;
   private isPlaying = false;
   private statusBarEl: HTMLElement | null = null;
@@ -58,9 +57,6 @@ export default class EdgeTTSReaderPlugin extends Plugin {
     this.statusBarEl.setText("Edge TTS");
 
     this.addSettingTab(new EdgeTTSSettingTab(this.app, this));
-
-    // 异步加载音色列表（不阻塞）
-    this.loadVoices().catch((e) => console.error("加载音色列表失败", e));
   }
 
   onunload() {
@@ -90,12 +86,6 @@ export default class EdgeTTSReaderPlugin extends Plugin {
 
   async saveSettings() {
     await this.saveData(this.settings);
-  }
-
-  async loadVoices() {
-    const resp = await fetch(`${TTS_SERVER}/voices`);
-    const data = await resp.json();
-    this.voices = data.voices || {};
   }
 
   private stripMarkdown(text: string): string {
@@ -142,7 +132,7 @@ export default class EdgeTTSReaderPlugin extends Plugin {
     await this.speakText(content, file.basename);
   }
 
-  private async speakText(rawText: string, title: string) {
+  async speakText(rawText: string, title: string) {
     if (this.isPlaying) this.stopReading();
 
     const segments = this.splitSentences(rawText);
@@ -160,7 +150,6 @@ export default class EdgeTTSReaderPlugin extends Plugin {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView);
     const editor: Editor | null = view ? view.editor : null;
 
-    // 预取队列：每个段落一个 Promise<ArrayBuffer | null>
     const queue: (Promise<ArrayBuffer | null> | null)[] = segments.map(() => null);
     const ensureFetched = (idx: number) => {
       if (idx < 0 || idx >= segments.length || queue[idx]) return;
@@ -168,14 +157,13 @@ export default class EdgeTTSReaderPlugin extends Plugin {
       if (!cleaned) {
         queue[idx] = Promise.resolve(null);
       } else {
-        queue[idx] = this.fetchAudio(cleaned).catch((e) => {
-          console.error(`段 ${idx} 取音失败:`, e);
+        queue[idx] = this.synthesize(cleaned).catch((e) => {
+          console.error(`段 ${idx} 合成失败:`, e);
           return null;
         });
       }
     };
 
-    // 第一次只取 1 句
     ensureFetched(0);
 
     for (let i = 0; i < segments.length; i++) {
@@ -183,19 +171,14 @@ export default class EdgeTTSReaderPlugin extends Plugin {
         this.cleanupReading();
         return;
       }
-
       const buf = await queue[i]!;
       if (token !== this.playToken) {
         this.cleanupReading();
         return;
       }
-
-      // 一旦开始播放当前句，就向前预取 5 句
       for (let k = 1; k <= PREFETCH_AHEAD; k++) ensureFetched(i + k);
-
       if (!buf) continue;
 
-      // 高亮当前句
       if (editor) {
         try {
           const from = editor.offsetToPos(segments[i].start);
@@ -206,7 +189,6 @@ export default class EdgeTTSReaderPlugin extends Plugin {
           // ignore
         }
       }
-
       await this.playBuffer(buf, token);
     }
 
@@ -221,25 +203,43 @@ export default class EdgeTTSReaderPlugin extends Plugin {
     document.body.classList.remove(BODY_READING_CLASS);
   }
 
-  private fetchAudio(text: string): Promise<ArrayBuffer> {
-    return new Promise((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", `${TTS_SERVER}/tts`);
-      xhr.setRequestHeader("Content-Type", "application/json");
-      xhr.responseType = "arraybuffer";
-      xhr.onload = () =>
-        xhr.status === 200
-          ? resolve(xhr.response)
-          : reject(new Error(`HTTP ${xhr.status}`));
-      xhr.onerror = () => reject(new Error("网络错误"));
-      xhr.onabort = () => reject(new Error("请求取消"));
-      xhr.send(
-        JSON.stringify({
-          text,
-          voice: this.settings.voice,
-          rate: this.settings.rate,
-        })
-      );
+  /** 直接连接微软 Edge TTS 服务合成 MP3，无需本地 Python */
+  private synthesize(text: string): Promise<ArrayBuffer> {
+    return new Promise(async (resolve, reject) => {
+      const tts = new MsEdgeTTS();
+      try {
+        await tts.setMetadata(
+          this.settings.voice,
+          OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3
+        );
+        const prosody = new ProsodyOptions();
+        prosody.rate = this.settings.rate;
+        const { audioStream } = tts.toStream(text, prosody);
+
+        const chunks: Buffer[] = [];
+        audioStream.on("data", (c: Buffer) => chunks.push(c));
+        audioStream.on("end", () => {
+          try {
+            const buf = Buffer.concat(chunks);
+            const ab = buf.buffer.slice(
+              buf.byteOffset,
+              buf.byteOffset + buf.byteLength
+            ) as ArrayBuffer;
+            resolve(ab);
+          } catch (err) {
+            reject(err);
+          } finally {
+            try { tts.close(); } catch { /* ignore */ }
+          }
+        });
+        audioStream.on("error", (err) => {
+          try { tts.close(); } catch { /* ignore */ }
+          reject(err);
+        });
+      } catch (err) {
+        try { tts.close(); } catch { /* ignore */ }
+        reject(err);
+      }
     });
   }
 
@@ -302,35 +302,21 @@ class EdgeTTSSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
-  async display(): Promise<void> {
+  display(): void {
     const { containerEl } = this;
     containerEl.empty();
     containerEl.createEl("h2", { text: "Edge TTS Reader 设置" });
 
-    // 音色还没加载就先加载一次
-    if (!this.plugin.voices || Object.keys(this.plugin.voices).length === 0) {
-      try {
-        await this.plugin.loadVoices();
-      } catch (e) {
-        containerEl.createEl("p", {
-          text: "无法连接 TTS 服务 (http://localhost:18080)，请确认 tts_server.py 在运行。",
-        });
-      }
-    }
-
     new Setting(containerEl)
       .setName("音色")
-      .setDesc("选择 Edge TTS 音色")
+      .setDesc("选择 Microsoft Edge TTS 音色")
       .addDropdown((dd) => {
-        const voices = this.plugin.voices || {};
-        const ids = Object.keys(voices);
-        if (ids.length === 0) {
+        for (const id of Object.keys(VOICES)) {
+          const v = VOICES[id];
+          dd.addOption(id, `${v.name}  [${id}]`);
+        }
+        if (!VOICES[this.plugin.settings.voice]) {
           dd.addOption(this.plugin.settings.voice, this.plugin.settings.voice);
-        } else {
-          for (const id of ids) {
-            const v = voices[id];
-            dd.addOption(id, `${v.name}  [${id}]`);
-          }
         }
         dd.setValue(this.plugin.settings.voice);
         dd.onChange(async (value) => {
@@ -365,10 +351,7 @@ class EdgeTTSSettingTab extends PluginSettingTab {
       .setDesc("用当前音色和语速朗读一句示例")
       .addButton((btn) =>
         btn.setButtonText("▶ 试听").onClick(async () => {
-          (this.plugin as any).speakText(
-            "你好，这是 Edge TTS 的音色试听。",
-            "试听"
-          );
+          this.plugin.speakText("你好，这是 Edge TTS 的音色试听。", "试听");
         })
       );
   }
