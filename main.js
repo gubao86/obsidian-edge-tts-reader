@@ -20935,7 +20935,7 @@ var EdgeTTSReaderPlugin = class extends import_obsidian.Plugin {
     await this.saveData(this.settings);
   }
   stripMarkdown(text) {
-    return text.replace(/```[\s\S]*?```/g, "").replace(/`[^`]*`/g, "").replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, link, alias) => alias || link).replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/[#*_~`>]/g, "").replace(/!\[[^\]]*\]\([^)]+\)/g, "").replace(/^---+$/gm, "").replace(/^===+$/gm, "").replace(/^\s*[-*+]\s+/gm, "").replace(/^\s*\d+\.\s+/gm, "").replace(/\|[^|\n]*\|/g, (match) => match.replace(/\|/g, " ")).replace(/\n{3,}/g, "\n\n").trim();
+    return text.replace(/```[\s\S]*?```/g, "").replace(/`[^`]*`/g, "").replace(/\$\$[\s\S]*?\$\$/g, "").replace(/\$[^$\n]+\$/g, "").replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_, link, alias) => alias || link).replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/!\[[^\]]*\]\([^)]+\)/g, "").replace(/^#{1,6}\s+/gm, "").replace(/^>\s+/gm, "").replace(/^[-*_]{3,}$/gm, "").replace(/^===+$/gm, "").replace(/^\s*[-*+]\s+/gm, "").replace(/^\s*\d+\.\s+/gm, "").replace(/^\s*\[[ x]\]\s+/gmi, "").replace(/\[\^[^\]]+\]/g, "").replace(/==([^=]+)==/g, "$1").replace(/<[^>]+>/g, "").replace(/\|[^|\n]*\|/g, (match) => match.replace(/\|/g, " ")).replace(/[*_~`]/g, "").replace(/\n{3,}/g, "\n\n").trim();
   }
   splitSentences(raw) {
     const segs = [];
