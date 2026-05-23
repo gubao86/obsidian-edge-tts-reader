@@ -19,6 +19,5 @@ venv/
 data.json
 
 # release artifacts
-release/
 dist/
 *.zip
